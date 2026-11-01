@@ -135,6 +135,25 @@ def retrieval_text(chunk: dict) -> str:
 # Backwards-compatible internal name used by existing ranking code.
 searchable_text = retrieval_text
 
+_EMBEDDING_MODEL: SentenceTransformer | None = None
+_RERANKER: CrossEncoder | None = None
+
+
+def embedding_model() -> SentenceTransformer:
+    """Load the query embedding model once and reuse it."""
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None:
+        _EMBEDDING_MODEL = SentenceTransformer(MODEL_NAME)
+    return _EMBEDDING_MODEL
+
+
+def reranker() -> CrossEncoder:
+    """Load the cross-encoder once and reuse it."""
+    global _RERANKER
+    if _RERANKER is None:
+        _RERANKER = CrossEncoder(RERANK_MODEL_NAME)
+    return _RERANKER
+
 
 def load_chunks() -> list[dict]:
     """Load the same chunks used to build the vector index."""
@@ -340,6 +359,7 @@ def retrieve(
     if not query_tokens:
         raise ValueError("Query contains no searchable terms.")
 
+    print("Running BM25...", flush=True)
     bm25 = BM25Okapi(corpus)
     scores = bm25.get_scores(query_tokens)
 
@@ -362,14 +382,14 @@ def retrieve(
     }
 
     # 2. Semantic vector search using the existing index
-    embedding_model = SentenceTransformer(MODEL_NAME)
-
-    query_vector = embedding_model.encode(
+    print("Encoding query...", flush=True)
+    query_vector = embedding_model().encode(
         query,
         normalize_embeddings=True,
         convert_to_numpy=True,
     )
 
+    print("Searching vectors...", flush=True)
     vector_results = collection.query(
         query_embeddings=[query_vector.tolist()],
         n_results=min(CANDIDATE_POOL, len(chunks)),
@@ -393,11 +413,11 @@ def retrieve(
 
     # 4. Cross-encoder reranking
     if rerank:
-        reranker = CrossEncoder(RERANK_MODEL_NAME)
+        print("Reranking...", flush=True)
         fused = rerank_with_cross_encoder(
             query=query,
             candidates=fused,
-            model=reranker,
+            model=reranker(),
         )
 
     return fused

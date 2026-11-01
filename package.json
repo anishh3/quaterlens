@@ -1,0 +1,26 @@
+{
+  "name": "quarterlens",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "export-chunks": "tsx scripts/export-chunks.ts",
+    "index": "npm run export-chunks && .venv\\Scripts\\python financial-retrieval\\src\\build_vector_index.py",
+    "pipeline": ".venv\\Scripts\\python financial-retrieval\\src\\api_server.py",
+    "check-answers": "tsx scripts/check-answers.ts"
+  },
+  "dependencies": {
+    "next": "^15.5.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "lucide-react": "^0.545.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.8",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

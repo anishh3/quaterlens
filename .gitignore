@@ -9,3 +9,8 @@ __pycache__/
 notes/
 financial-retrieval/data/raw/
 financial-retrieval/artifacts/
+
+node_modules/
+.next/
+out/
+*.tsbuildinfo

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -59,15 +60,12 @@ def build_context(results: list[dict]) -> tuple[str, list[str]]:
     return "\n\n".join(evidence), citations
 
 
-def generate_answer(
+def build_messages(
     query: str,
     context: str,
-    *,
-    model: str,
-    ollama_url: str,
     conversation_history: list[dict[str, str]] | None = None,
-) -> str:
-    """Ask a locally running Ollama model to answer from retrieved evidence."""
+) -> list[dict[str, str]]:
+    """Build the grounded prompt shared by Ollama and Azure OpenAI."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     if conversation_history:
         messages.extend(conversation_history[-6:])
@@ -79,6 +77,95 @@ def generate_answer(
             "Answer the question using this evidence."
         ),
     })
+    return messages
+
+
+def _message_text(message: object) -> str:
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                parts.append(str(part.get("text") or ""))
+        return "".join(parts)
+    return ""
+
+
+def generate_azure_answer(
+    query: str,
+    context: str,
+    *,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> str:
+    """Ask Azure OpenAI to answer from retrieved evidence."""
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY", "").strip()
+    deployment = os.environ.get("AZURE_OPENAI_MODEL_NAME", "").strip()
+    api_version = os.environ.get("OPENAI_API_VERSION", "2024-12-01-preview").strip()
+
+    if not endpoint or not api_key or not deployment:
+        raise RuntimeError(
+            "Azure OpenAI is selected, but the endpoint, key, or model name is missing."
+        )
+
+    url = (
+        f"{endpoint.rstrip('/')}/openai/deployments/{deployment}/chat/completions"
+        f"?api-version={api_version}"
+    )
+    payload = {
+        "messages": build_messages(query, context, conversation_history),
+        "max_completion_tokens": 800,
+    }
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
+            result = json.loads(response.read())
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace").strip()
+        message = f"Azure OpenAI returned HTTP {exc.code}"
+        if detail:
+            message += f": {detail[:500]}"
+        raise RuntimeError(message) from exc
+    except URLError as exc:
+        raise RuntimeError("Could not reach Azure OpenAI.") from exc
+    except TimeoutError as exc:
+        raise RuntimeError("Azure OpenAI did not respond in time.") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Azure OpenAI returned invalid JSON.") from exc
+
+    choices = result.get("choices") if isinstance(result, dict) else None
+    message = choices[0].get("message") if isinstance(choices, list) and choices else None
+    answer = _message_text(message)
+    if not answer.strip():
+        raise RuntimeError("Azure OpenAI returned an empty answer.")
+    return answer.strip()
+
+
+def generate_answer(
+    query: str,
+    context: str,
+    *,
+    model: str,
+    ollama_url: str,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> str:
+    """Ask a locally running Ollama model to answer from retrieved evidence."""
+    messages = build_messages(query, context, conversation_history)
     payload = {
         "model": model,
         "messages": messages,

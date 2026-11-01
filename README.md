@@ -1,9 +1,46 @@
 # Financial RAG
 
-Financial RAG is a Streamlit question-answering app for exploring Infosys
-financial reports. Ask a question in natural language and the app searches
-report excerpts, sends the relevant evidence to a language model, and returns
-an answer with document and page references.
+QuarterLens is the web app in this repository. The chat retrieves Infosys
+FY2026 excerpts with BM25 and a Chroma vector index, reranks the shortlist,
+and asks a local Ollama model to answer from that evidence.
+
+## Run the app
+
+Use two terminals from the repository root.
+
+```powershell
+npm install
+npm run dev
+```
+
+```powershell
+npm run index
+npm run pipeline
+```
+
+`npm run index` writes the chunk file and builds the vector index. `npm run
+pipeline` loads the embedding and reranking models, then listens on
+`http://127.0.0.1:8765`. The Next.js app forwards questions to that service.
+Ollama must be running with `qwen2.5:1.5b`:
+
+```powershell
+ollama pull qwen2.5:1.5b
+```
+
+The first question after the pipeline starts is slower because the models are
+loaded during startup. Later questions still wait on retrieval and the local
+model, which is expected.
+
+Vercel can host the Next.js interface. The Python retrieval service and Ollama
+stay on a machine that has the index and the model. Set `PIPELINE_URL` if that
+service is not on `127.0.0.1:8765`.
+
+## Local Python pipeline
+
+Financial RAG also includes a Streamlit question-answering app for exploring
+Infosys financial reports. Ask a question in natural language and the app
+searches report excerpts, sends the relevant evidence to a language model, and
+returns an answer with document and page references.
 
 ## What it does
 
