@@ -1,59 +1,59 @@
 # QuarterLens
 
-QuarterLens is a financial-report Q&A app for Infosys FY2026. Ask a question in plain language and the app searches the indexed results, then writes an answer that stays tied to those excerpts. The reply shows the source document, page, and the figures that were retrieved.
+QuarterLens is a question-answering app for Infosys FY2026 financial reports. A person asks a question in ordinary language, such as what revenue or operating margin was in a given quarter. The app finds the relevant lines in the indexed results and returns an answer with the document, page, and figures it used.
 
-The interface is a Next.js app. Search and answer generation run in a local Python service.
+The goal is a grounded answer. The language model does not invent numbers from memory. It only writes from excerpts the search step retrieved.
 
-## What you can ask
+## What the user sees
 
-- What was Infosys revenue in Q1 FY2026?
-- What is the operating profit margin in Q1 FY2026?
-- What was the net profit in Q1 FY2026?
-- What was basic EPS in Q1 FY2026?
-- Compare Q1 and Q2 FY2026 revenue
-- What was the operating margin in Q3 FY2026?
-- Show me Infosys revenue for FY2026
-- Show me employee count as of March 31, 2026
+The interface is a chat. The sidebar holds the conversation list. The main panel shows the answer, a small table of the retrieved figures, and source cards for each excerpt. The corpus is Infosys. Official report PDFs are linked from the Documents page.
 
-Questions outside the indexed figures, such as a separate export-revenue line, come back without a made-up number.
+## How it works
 
-## How an answer is produced
+Each report figure is stored as a small chunk with its metric, period, unit, document, and page.
 
-1. The question is searched with **BM25** keyword matching and **vector search**.
-2. Chunks are embedded with `sentence-transformers/all-MiniLM-L6-v2` and stored in **Chroma**.
-3. Reciprocal rank fusion mixes the two rankings. A cross-encoder, `cross-encoder/ms-marco-MiniLM-L-6-v2`, reranks the shortlist.
-4. The top excerpts are sent to **Azure OpenAI** (`gpt-5-mini` by default). The model is instructed to use only that evidence and to cite the supplied source labels.
-5. The page shows the answer, a supporting table, and the source cards.
+1. **Keyword search** (BM25) finds chunks that share the words in the question.
+2. **Vector search** embeds the question with `all-MiniLM-L6-v2` and finds chunks with a similar meaning in a Chroma index.
+3. **Fusion and reranking** combine those two lists, then a cross-encoder (`ms-marco-MiniLM-L-6-v2`) reorders the shortlist by how well each chunk answers the question.
+4. **Answer generation** sends only the top excerpts to Azure OpenAI (`gpt-5-mini`). The prompt tells the model to use that evidence, avoid guessing, and cite the supplied sources.
 
-The model is not trained on these reports. The report-specific detail comes from retrieval at question time.
+The model is not fine-tuned on these reports. Report-specific facts come from retrieval at question time.
 
-## Stack
+## Technologies
 
-| Piece | Role |
+| Technology | Role |
 |---|---|
-| Next.js | Chat interface |
-| Python | Retrieval service on `http://127.0.0.1:8765` |
-| rank-bm25 | Keyword search |
-| Sentence Transformers | Query and chunk embeddings |
-| Chroma | Vector index |
-| Cross-encoder | Reranking |
-| Azure OpenAI | Answer generation from the retrieved excerpts |
+| Next.js | Web interface |
+| Python | Search and answer service |
+| BM25 | Keyword retrieval |
+| Sentence Transformers | Embeddings for semantic search |
+| Chroma | Vector store |
+| Cross-encoder | Reranking retrieved excerpts |
+| Azure OpenAI | Writes the final answer from the excerpts |
 
-## Run it
+## Scope
 
-You need Node.js, Python 3.11, and an Azure OpenAI deployment. From the repository root, use two terminals.
+The index covers Infosys results for the year ended March 31, 2026, including the quarterly statements. Source reports:
 
-### 1. Install the web app and the Python environment
+- [Q1 FY2026](https://www.infosys.com/investors/reports-filings/quarterly-results/2025-2026/q1/documents/q1-2026.pdf), quarter ended June 30, 2025
+- [Q2 FY2026](https://www.infosys.com/investors/reports-filings/quarterly-results/2025-2026/q2/documents/q2-2026.pdf), quarter ended September 30, 2025
+- [Q3 FY2026](https://www.infosys.com/investors/reports-filings/quarterly-results/2025-2026/q3/documents/q3-2026.pdf), quarter ended December 31, 2025
+- [Additional information 2025-26](https://www.infosys.com/investors/reports-filings/documents/additional-information-2025-26.pdf), year ended March 31, 2026
+
+If a figure is not in the index, the app says so instead of filling the gap. QuarterLens summarizes reported figures. It is not investment advice and it does not replace the original filings.
+
+## Run locally
+
+Requires Node.js, Python 3.11, and an Azure OpenAI deployment. From the repository root:
 
 ```powershell
 npm install
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r .\financial-retrieval\requirements.txt
+npm run index
 ```
 
-### 2. Add your model settings
-
-Create a `.env` file in the repository root. It is gitignored.
+Put the Azure settings in a `.env` file in the repository root. That file is not committed.
 
 ```text
 AZURE_OPENAI_API_KEY=your-key
@@ -63,61 +63,11 @@ AZURE_OPENAI_MODEL_NAME=gpt-5-mini
 LLM_PROVIDER=azure
 ```
 
-`AZURE_OPENAI_MODEL_NAME` is the Azure deployment name. Set `LLM_PROVIDER=ollama` only if you want the older local Ollama path instead. That path expects Ollama at `http://localhost:11434` and the model `qwen2.5:1.5b`.
-
-### 3. Build the search index
-
-```powershell
-npm run index
-```
-
-This writes the chunk file under `financial-retrieval/artifacts/chunks/` and builds the Chroma index. Those files stay on your machine and are not committed.
-
-### 4. Start the pipeline, then the site
+Start the search service, then the site, in two terminals:
 
 ```powershell
 npm run pipeline
-```
-
-Wait until the service prints that it is listening. The first startup loads the embedding and reranking models, so it takes longer than a later restart.
-
-In the other terminal:
-
-```powershell
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The first question after startup is the slow one. Later questions still take a few seconds, because each one searches the index and calls the model.
-
-`POST /api/ask` with `{ "question": "..." }` returns the same answer as the page. The Next.js route forwards the question to the Python service. If that service is not on port 8765, set `PIPELINE_URL`.
-
-## Reports
-
-The indexed figures come from Infosys FY2026 results.
-
-| Report | Period |
-|---|---|
-| [Q1 FY2026](https://www.infosys.com/investors/reports-filings/quarterly-results/2025-2026/q1/documents/q1-2026.pdf) | Quarter ended June 30, 2025 |
-| [Q2 FY2026](https://www.infosys.com/investors/reports-filings/quarterly-results/2025-2026/q2/documents/q2-2026.pdf) | Quarter ended September 30, 2025 |
-| [Q3 FY2026](https://www.infosys.com/investors/reports-filings/quarterly-results/2025-2026/q3/documents/q3-2026.pdf) | Quarter ended December 31, 2025 |
-| [Additional information 2025-26](https://www.infosys.com/investors/reports-filings/documents/additional-information-2025-26.pdf) | Year ended March 31, 2026 |
-
-Official PDFs are linked from the Documents page. This app reads and summarizes reported figures. It is not investment advice, and it is not a substitute for the original filings.
-
-A growth rate marked calculated was computed from two reported totals. It was not copied from a printed growth column.
-
-## Layout
-
-```text
-app/                     Next.js pages and /api/ask
-components/              Sidebar and chat
-lib/                     Indexed Infosys figures used to build chunks
-scripts/export-chunks.ts Writes chunks.jsonl for the vector index
-financial-retrieval/src  BM25, Chroma, reranking, and the answer service
-```
-
-`financial-retrieval/src` also contains the earlier Streamlit chat and the scripts that normalize Docling JSON, chunk records, and build an index from those records. The web app uses `api_server.py`.
-
-## Hosting
-
-The pages can be built with `npm run build`. Answers still need the Python service and the Azure deployment running where `PIPELINE_URL` can reach them. A serverless host that only runs Next.js cannot load the embedding models or the vector index.
+Open http://localhost:3000. The vector index and model files are created locally and are not part of the Git repository. A host that only runs the Next.js app cannot answer questions, because search and the language model run in the Python service.
