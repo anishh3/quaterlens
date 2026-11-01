@@ -4,6 +4,8 @@ QuarterLens is a question-answering app for Infosys FY2026 financial reports. A 
 
 The goal is a grounded answer. The language model does not invent numbers from memory. It only writes from excerpts the search step retrieved.
 
+![QuarterLens answering a revenue question, with the retrieved figures and source excerpts beside the reply](./images/quarterlens.png)
+
 ## What the user sees
 
 The interface is a chat. The sidebar holds the conversation list. The main panel shows the answer, a small table of the retrieved figures, and source cards for each excerpt. The corpus is Infosys. Official report PDFs are linked from the Documents page.
