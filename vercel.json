@@ -1,0 +1,31 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "financial-retrieval",
+          "format": "url",
+          "env": "PIPELINE_URL"
+        }
+      ]
+    },
+    "financial-retrieval": {
+      "root": "financial-retrieval",
+      "runtime": "python",
+      "framework": "fastapi",
+      "entrypoint": "src.api_server:app"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
+    }
+  ]
+}

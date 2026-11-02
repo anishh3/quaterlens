@@ -10,16 +10,10 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
 
-ROOT = Path.cwd()
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
-CHUNKS_DIR = ROOT / "financial-retrieval" / "artifacts" / "chunks"
-VECTOR_DB = (
-    ROOT
-    / "financial-retrieval"
-    / "artifacts"
-    / "vector_store"
-    / "chroma"
-)
+CHUNKS_DIR = PACKAGE_ROOT / "artifacts" / "chunks"
+VECTOR_DB = PACKAGE_ROOT / "artifacts" / "vector_store" / "chroma"
 
 COLLECTION_NAME = "quarterlens_chunks"
 

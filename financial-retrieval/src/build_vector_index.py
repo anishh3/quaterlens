@@ -2,33 +2,17 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from typing import Any
 
 import chromadb
 import torch
 from sentence_transformers import SentenceTransformer
 
-from retrieval import retrieval_text
+from retrieval import PACKAGE_ROOT, retrieval_text
 
 
-# Run this script from the outer financial-rag directory.
-PROJECT_ROOT = Path.cwd()
-
-CHUNKS_DIR = (
-    PROJECT_ROOT
-    / "financial-retrieval"
-    / "artifacts"
-    / "chunks"
-)
-
-VECTOR_STORE_DIR = (
-    PROJECT_ROOT
-    / "financial-retrieval"
-    / "artifacts"
-    / "vector_store"
-    / "chroma"
-)
+CHUNKS_DIR = PACKAGE_ROOT / "artifacts" / "chunks"
+VECTOR_STORE_DIR = PACKAGE_ROOT / "artifacts" / "vector_store" / "chroma"
 
 COLLECTION_NAME = "quarterlens_chunks"
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"

@@ -1,18 +1,20 @@
-"""HTTP wrapper around hybrid retrieval and Ollama answer generation."""
+"""HTTP wrapper around hybrid retrieval and answer generation."""
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-os.chdir(REPO_ROOT)
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = PACKAGE_ROOT.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dotenv import load_dotenv
@@ -33,6 +35,12 @@ HOST = "127.0.0.1"
 PORT = 8765
 TOP_K = 4
 PIPELINE_LOCK = threading.Lock()
+
+app = FastAPI(title="QuarterLens retrieval")
+
+
+class AskRequest(BaseModel):
+    question: str = Field(default="", max_length=1000)
 
 
 def evidence_from_results(results: list[dict]) -> tuple[list[dict], list[dict], dict | None]:
@@ -88,8 +96,8 @@ def evidence_from_results(results: list[dict]) -> tuple[list[dict], list[dict], 
     return evidence, citations, table
 
 
-def answer_question(question: str) -> dict:
-    """Retrieve evidence, then ask Ollama to answer from that evidence only."""
+def answer_question(question: str) -> dict[str, Any]:
+    """Retrieve evidence, then ask the configured model from that evidence only."""
     with PIPELINE_LOCK:
         results = retrieve(question, rerank=True)
         selected = results[:TOP_K]
@@ -121,61 +129,32 @@ def answer_question(question: str) -> dict:
         }
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802
-        if self.path != "/health":
-            self._send(404, {"error": "Not found."})
-            return
-        self._send(200, {"ok": True})
+@app.get("/health")
+def health() -> dict[str, bool]:
+    return {"ok": True}
 
-    def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/ask":
-            self._send(404, {"error": "Not found."})
-            return
 
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        raw = self.rfile.read(length) if length else b"{}"
-
-        try:
-            body = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
-            self._send(400, {"error": "Request body must be JSON."})
-            return
-
-        question = str(body.get("question") or "").strip()[:1000]
-        if not question:
-            self._send(400, {"error": "Question is required."})
-            return
-
-        try:
-            payload = answer_question(question)
-        except Exception as exc:  # noqa: BLE001 - return the pipeline error to the UI
-            self._send(500, {"error": str(exc)})
-            return
-
-        self._send(200, payload)
-
-    def log_message(self, format: str, *args) -> None:  # noqa: A002
-        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
-
-    def _send(self, status: int, payload: dict) -> None:
-        data = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+@app.post("/ask")
+def ask(body: AskRequest) -> dict[str, Any]:
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required.")
+    try:
+        return answer_question(question)
+    except Exception as exc:  # noqa: BLE001 - return the pipeline error to the UI
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 def main() -> int:
+    import uvicorn
+
     print("Loading embedding and reranking models...")
-    retrieve("Infosys revenue Q1 FY2026", rerank=True)
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"Retrieval pipeline listening on http://{HOST}:{PORT}")
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopping retrieval pipeline.")
+        retrieve("Infosys revenue Q1 FY2026", rerank=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Startup retrieval warmup skipped: {exc}")
+    print(f"Retrieval pipeline listening on http://{HOST}:{PORT}")
+    uvicorn.run(app, host=HOST, port=PORT)
     return 0
 
 

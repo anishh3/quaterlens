@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 
 export const maxDuration = 300;
 
-const PIPELINE_URL = process.env.PIPELINE_URL ?? "http://127.0.0.1:8765";
+function pipelineAskUrl(): URL {
+  const base = process.env.PIPELINE_URL ?? "http://127.0.0.1:8765";
+  return new URL("ask", base.endsWith("/") ? base : `${base}/`);
+}
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { question?: unknown };
@@ -12,7 +15,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await fetch(`${PIPELINE_URL}/ask`, {
+    const response = await fetch(pipelineAskUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
